@@ -1,0 +1,8 @@
+[
+{
+  "directory": "/home/jochem/uniwill-laptop/build",
+  "command": "/usr/bin/c++ -DQT_CORE_LIB -DQT_GUI_LIB -DQT_WIDGETS_LIB -I/home/jochem/uniwill-laptop/build/uniwill-control_autogen/include -I/home/jochem/uniwill-laptop/control/src -isystem /usr/include/x86_64-linux-gnu/qt6/QtWidgets -isystem /usr/include/x86_64-linux-gnu/qt6 -isystem /usr/include/x86_64-linux-gnu/qt6/QtCore -isystem /usr/lib/x86_64-linux-gnu/qt6/mkspecs/linux-g++ -isystem /usr/include/x86_64-linux-gnu/qt6/QtGui -g -std=gnu++17 -o CMakeFiles/uniwill-control.dir/uniwill-control_autogen/mocs_compilation.cpp.o -c /home/jochem/uniwill-laptop/build/uniwill-control_autogen/mocs_compilation.cpp",
+  "file": "/home/jochem/uniwill-laptop/build/uniwill-control_autogen/mocs_compilation.cpp",
+  "output": "CMakeFiles/uniwill-control.dir/uniwill-control_autogen/mocs_compilation.cpp.o"
+}
+]

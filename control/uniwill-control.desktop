@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=ERAZER Deck
+Comment=Lighting, hotkeys and power for the MEDION ERAZER Major 15 X1
+Exec=uniwill-control
+Icon=preferences-desktop-keyboard-shortcuts
+Terminal=false
+Categories=Settings;HardwareSettings;Qt;
+StartupNotify=true
