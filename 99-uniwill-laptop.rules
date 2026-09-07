@@ -1,0 +1,3 @@
+# Uniwill sysfs is 644 root; chmod after the driver binds and LEDs appear.
+ACTION=="bind", SUBSYSTEM=="platform", KERNEL=="INOU0000:*", RUN+="/bin/sh -c 'for f in fn_lock super_key_enable touchpad_toggle_enable rainbow_animation breathing_in_suspend ctgp_offset usb_c_power_priority ac_auto_boot usb_powershare_high; do p=/sys/devices/platform/%k/$f; [ -e \"$p\" ] && chgrp plugdev \"$p\" && chmod 664 \"$p\"; done'"
+ACTION=="add", SUBSYSTEM=="leds", KERNEL=="uniwill:*", RUN+="/bin/sh -c 'for f in brightness multi_intensity; do p=/sys/class/leds/%k/$f; [ -e \"$p\" ] && chgrp plugdev \"$p\" && chmod 664 \"$p\"; done'"

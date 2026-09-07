@@ -2677,6 +2677,25 @@ static struct uniwill_device_descriptor machenike_l16p_descriptor __initdata = {
 	.kbd_led_max_brightness = 4,
 };
 
+static struct uniwill_device_descriptor medion_erazer_major_15_x1_descriptor __initdata = {
+	.features = UNIWILL_FEATURE_FN_LOCK |
+		    UNIWILL_FEATURE_SUPER_KEY |
+		    UNIWILL_FEATURE_TOUCHPAD_TOGGLE |
+		    UNIWILL_FEATURE_LIGHTBAR |
+		    UNIWILL_FEATURE_CPU_TEMP |
+		    UNIWILL_FEATURE_GPU_TEMP |
+		    UNIWILL_FEATURE_PRIMARY_FAN |
+		    UNIWILL_FEATURE_SECONDARY_FAN |
+		    UNIWILL_FEATURE_NVIDIA_CTGP_CONTROL |
+		    UNIWILL_FEATURE_USB_C_POWER_PRIORITY |
+		    UNIWILL_FEATURE_KEYBOARD_BACKLIGHT |
+		    UNIWILL_FEATURE_AC_AUTO_BOOT |
+		    UNIWILL_FEATURE_USB_POWERSHARE,
+	.kbd_led_single_color = false,
+	.kbd_led_max_brightness = 4,
+	.lightbar_max_brightness = 200,
+};
+
 static struct uniwill_device_descriptor lapqc71a_lapqc71b_descriptor __initdata = {
 	.features = UNIWILL_FEATURE_SUPER_KEY |
 		    UNIWILL_FEATURE_LIGHTBAR |
@@ -2876,6 +2895,15 @@ static const struct dmi_system_id uniwill_dmi_table[] __initconst = {
 			DMI_EXACT_MATCH(DMI_BOARD_NAME, "L16P"),
 		},
 		.driver_data = &machenike_l16p_descriptor,
+	},
+	{
+		.ident = "MEDION ERAZER Major 15 X1",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "MEDION"),
+			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "Major 15 X1"),
+			DMI_EXACT_MATCH(DMI_BOARD_NAME, "GMxIXxA"),
+		},
+		.driver_data = &medion_erazer_major_15_x1_descriptor,
 	},
 	{
 		.ident = "XMG FUSION 15 (L19)",
