@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
-Name=ERAZER Deck
-Comment=Lighting, hotkeys and power for the MEDION ERAZER Major 15 X1
+Name=ERAZER Major 15 X1
+Comment=Keyboard lights, front LED strip, hotkeys and power for this Uniwill laptop
 Exec=uniwill-control
 Icon=preferences-desktop-keyboard-shortcuts
 Terminal=false

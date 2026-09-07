@@ -1,0 +1,8 @@
+#!/bin/sh
+set -e
+if [ "$1" = "remove" ] || [ "$1" = "deconfigure" ]; then
+	if command -v dkms >/dev/null; then
+		dkms remove -m uniwill-laptop -v 1.0 --all 2>/dev/null || true
+	fi
+fi
+#DEBHELPER#

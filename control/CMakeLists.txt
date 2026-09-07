@@ -15,3 +15,4 @@ target_include_directories(uniwill-control PRIVATE src)
 target_link_libraries(uniwill-control PRIVATE Qt6::Widgets)
 
 install(TARGETS uniwill-control RUNTIME DESTINATION bin)
+install(FILES uniwill-control.desktop DESTINATION share/applications)

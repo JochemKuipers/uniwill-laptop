@@ -1,0 +1,34 @@
+Source: uniwill-laptop
+Section: misc
+Priority: optional
+Maintainer: Jochem Kuipers <jochem@kuipers.cc>
+Build-Depends: debhelper-compat (= 13),
+ cmake,
+ pkg-config,
+ qt6-base-dev
+Standards-Version: 4.7.0
+Homepage: https://github.com/JochemKuipers/uniwill-laptop
+Vcs-Git: https://github.com/JochemKuipers/uniwill-laptop.git
+Vcs-Browser: https://github.com/JochemKuipers/uniwill-laptop
+Rules-Requires-Root: no
+
+Package: uniwill-laptop-dkms
+Architecture: all
+Depends: dkms, ${misc:Depends}
+Description: DKMS driver for Uniwill / Medion ERAZER laptops
+ Out-of-tree uniwill-laptop kernel module with a DMI match for the
+ MEDION ERAZER Major 15 X1. Builds against the running kernel via DKMS
+ and overrides the in-tree module when present.
+
+Package: uniwill-control
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, uniwill-laptop-dkms
+Description: Qt control app for Uniwill / Medion ERAZER laptops
+ Desktop app to set keyboard RGB, the front LED strip, Fn lock, USB-C
+ power split, extra GPU power, and to read temperatures and fans.
+
+Package: uniwill-laptop
+Architecture: all
+Depends: uniwill-laptop-dkms, uniwill-control, ${misc:Depends}
+Description: Uniwill laptop extras (driver and control app)
+ Metapackage for the DKMS driver and the Qt control app.

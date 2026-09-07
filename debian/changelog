@@ -1,0 +1,5 @@
+uniwill-laptop (1.0-1) unstable; urgency=medium
+
+  * Initial package: DKMS driver plus Qt control app for MEDION ERAZER Major 15 X1.
+
+ -- Jochem Kuipers <jochem@kuipers.cc>  Mon, 07 Sep 2026 19:55:00 +0200

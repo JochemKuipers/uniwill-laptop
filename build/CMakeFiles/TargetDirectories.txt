@@ -1,9 +1,0 @@
-/home/jochem/uniwill-laptop/build/CMakeFiles/uniwill-control.dir
-/home/jochem/uniwill-laptop/build/CMakeFiles/edit_cache.dir
-/home/jochem/uniwill-laptop/build/CMakeFiles/rebuild_cache.dir
-/home/jochem/uniwill-laptop/build/CMakeFiles/list_install_components.dir
-/home/jochem/uniwill-laptop/build/CMakeFiles/install.dir
-/home/jochem/uniwill-laptop/build/CMakeFiles/install/local.dir
-/home/jochem/uniwill-laptop/build/CMakeFiles/install/strip.dir
-/home/jochem/uniwill-laptop/build/CMakeFiles/uniwill-control_autogen_timestamp_deps.dir
-/home/jochem/uniwill-laptop/build/CMakeFiles/uniwill-control_autogen.dir

@@ -1,0 +1,10 @@
+build-control/
+.debhelper/
+debhelper-build-stamp
+files
+*.substvars
+*.log
+tmp/
+uniwill-control/
+uniwill-laptop/
+uniwill-laptop-dkms/

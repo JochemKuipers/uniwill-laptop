@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e
+if ! getent group plugdev >/dev/null; then
+	addgroup --system plugdev || true
+fi
+if command -v dkms >/dev/null; then
+	dkms add -m uniwill-laptop -v 1.0 2>/dev/null || true
+	dkms build -m uniwill-laptop -v 1.0 2>/dev/null || true
+	dkms install -m uniwill-laptop -v 1.0 --force 2>/dev/null || true
+fi
+if command -v udevadm >/dev/null; then
+	udevadm control --reload || true
+fi
+#DEBHELPER#

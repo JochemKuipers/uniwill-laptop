@@ -1,0 +1,79 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  deb:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Debian packages
+        run: bash packaging/build-deb.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: debian
+          path: dist/*.deb
+
+  rpm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Fedora packages
+        run: |
+          mkdir -p dist
+          bash packaging/build-rpm.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fedora
+          path: dist/*.rpm
+
+  release:
+    needs: [deb, rpm]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: debian
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: fedora
+          path: dist
+      - name: GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: uniwill-laptop ${{ github.ref_name }}
+          body: |
+            DKMS driver and Qt app for Uniwill / MEDION ERAZER laptops.
+
+            ## Debian / PikaOS
+            ```sh
+            curl -fsSL https://jochemkuipers.github.io/apt-repo/jochem.sources \
+              | sudo tee /etc/apt/sources.list.d/jochem.sources
+            sudo apt update
+            sudo apt install uniwill-laptop
+            ```
+
+            ## Arch
+            ```sh
+            yay -S uniwill-laptop-dkms uniwill-control
+            ```
+
+            ## Fedora
+            Install the `.rpm` assets from this release.
+          files: dist/*
+          generate_release_notes: false
+          fail_on_unmatched_files: true

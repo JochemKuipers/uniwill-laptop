@@ -1,0 +1,18 @@
+#!/usr/bin/make -f
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+	dh_auto_configure --sourcedirectory=control --builddirectory=debian/build-control
+
+override_dh_auto_build:
+	dh_auto_build --builddirectory=debian/build-control
+
+override_dh_auto_install:
+	dh_auto_install --builddirectory=debian/build-control --destdir=debian/uniwill-control
+
+override_dh_auto_clean:
+	dh_auto_clean --builddirectory=debian/build-control
+	rm -rf debian/build-control

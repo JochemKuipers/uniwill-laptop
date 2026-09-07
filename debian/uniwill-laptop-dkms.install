@@ -1,0 +1,7 @@
+Makefile usr/src/uniwill-laptop-1.0/
+dkms.conf usr/src/uniwill-laptop-1.0/
+uniwill-acpi.c usr/src/uniwill-laptop-1.0/
+uniwill-wmi.c usr/src/uniwill-laptop-1.0/
+uniwill-wmi.h usr/src/uniwill-laptop-1.0/
+uniwill-laptop.conf usr/lib/modules-load.d/
+99-uniwill-laptop.rules usr/lib/udev/rules.d/
