@@ -9,7 +9,7 @@ url='https://github.com/JochemKuipers/uniwill-laptop'
 license=('GPL-2.0-only')
 makedepends=('cmake' 'qt6-base')
 source=("$pkgbase-$pkgver.tar.gz::https://github.com/JochemKuipers/uniwill-laptop/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('7f645dcd4ea396dee27c2145796bf724e9f875645183369d456a3f028a3c09d7')
 
 build() {
 	cmake -S "$pkgbase-$pkgver/control" -B build \
