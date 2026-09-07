@@ -16,3 +16,11 @@ override_dh_auto_install:
 override_dh_auto_clean:
 	dh_auto_clean --builddirectory=debian/build-control
 	rm -rf debian/build-control
+
+# Ubuntu 24.04 uses *t64 Qt package names; Debian/PikaOS 6.10 uses
+# libqt6gui6 / libqt6widgets6. Keep both as ORs in debian/control.
+override_dh_shlibdeps:
+	dh_shlibdeps -- \
+		-xlibqt6core6t64 -xlibqt6core6 \
+		-xlibqt6gui6t64 -xlibqt6gui6 \
+		-xlibqt6widgets6t64 -xlibqt6widgets6

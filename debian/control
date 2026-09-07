@@ -22,7 +22,10 @@ Description: DKMS driver for Uniwill / Medion ERAZER laptops
 
 Package: uniwill-control
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, uniwill-laptop-dkms
+Depends: ${shlibs:Depends}, ${misc:Depends}, uniwill-laptop-dkms,
+ libqt6core6t64 (>= 6.4.0) | libqt6core6 (>= 6.4.0),
+ libqt6gui6 (>= 6.4.0) | libqt6gui6t64 (>= 6.4.0),
+ libqt6widgets6 (>= 6.4.0) | libqt6widgets6t64 (>= 6.4.0)
 Description: Qt control app for Uniwill / Medion ERAZER laptops
  Desktop app to set keyboard RGB, the front LED strip, Fn lock, USB-C
  power split, extra GPU power, and to read temperatures and fans.

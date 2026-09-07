@@ -1,3 +1,9 @@
+uniwill-laptop (1.0-2) unstable; urgency=medium
+
+  * Depend on Qt 6 libs under both Ubuntu t64 and Debian/PikaOS names.
+
+ -- Jochem Kuipers <jochem@kuipers.cc>  Mon, 07 Sep 2026 20:10:00 +0200
+
 uniwill-laptop (1.0-1) unstable; urgency=medium
 
   * Initial package: DKMS driver plus Qt control app for MEDION ERAZER Major 15 X1.
