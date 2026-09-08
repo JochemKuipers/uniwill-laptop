@@ -369,6 +369,7 @@
 #define UNIWILL_FEATURE_KEYBOARD_BACKLIGHT	BIT(12)
 #define UNIWILL_FEATURE_AC_AUTO_BOOT		BIT(13)
 #define UNIWILL_FEATURE_USB_POWERSHARE		BIT(14)
+#define UNIWILL_FEATURE_FAN_CONTROL		BIT(15)
 
 enum usb_c_power_priority_options {
 	USB_C_POWER_PRIORITY_CHARGING = 0,
@@ -418,6 +419,10 @@ struct uniwill_data {
 	struct notifier_block nb;
 	struct mutex usb_c_power_priority_lock; /* Protects dependent bit write and state safe */
 	enum usb_c_power_priority_options last_usb_c_power_priority_option;
+	struct mutex fan_lock;	/* Protects custom fan table / pwm_enable */
+	u8 pwm_enable[2];
+	u8 pwm_duty[2];
+	bool fan_tables_ready;
 };
 
 struct uniwill_battery_entry {
@@ -619,9 +624,12 @@ static bool uniwill_writeable_reg(struct device *dev, unsigned int reg)
 	case EC_ADDR_CTGP_DB_TPP_OFFSET:
 	case EC_ADDR_CTGP_DB_DB_OFFSET:
 	case EC_ADDR_USB_C_POWER_PRIORITY:
+	case EC_ADDR_UNIVERSAL_FAN_CTRL:
+	case EC_ADDR_AP_OEM_6:
 		return true;
 	default:
-		return false;
+		return reg >= EC_ADDR_CPU_TEMP_END_TABLE &&
+		       reg < EC_ADDR_GPU_FAN_SPEED_TABLE + FAN_TABLE_LENGTH;
 	}
 }
 
@@ -665,9 +673,12 @@ static bool uniwill_readable_reg(struct device *dev, unsigned int reg)
 	case EC_ADDR_CTGP_DB_TPP_OFFSET:
 	case EC_ADDR_CTGP_DB_DB_OFFSET:
 	case EC_ADDR_USB_C_POWER_PRIORITY:
+	case EC_ADDR_UNIVERSAL_FAN_CTRL:
+	case EC_ADDR_AP_OEM_6:
 		return true;
 	default:
-		return false;
+		return reg >= EC_ADDR_CPU_TEMP_END_TABLE &&
+		       reg < EC_ADDR_GPU_FAN_SPEED_TABLE + FAN_TABLE_LENGTH;
 	}
 }
 
@@ -691,9 +702,12 @@ static bool uniwill_volatile_reg(struct device *dev, unsigned int reg)
 	case EC_ADDR_OEM_4:
 	case EC_ADDR_CHARGE_CTRL:
 	case EC_ADDR_USB_C_POWER_PRIORITY:
+	case EC_ADDR_UNIVERSAL_FAN_CTRL:
+	case EC_ADDR_AP_OEM_6:
 		return true;
 	default:
-		return false;
+		return reg >= EC_ADDR_CPU_TEMP_END_TABLE &&
+		       reg < EC_ADDR_GPU_FAN_SPEED_TABLE + FAN_TABLE_LENGTH;
 	}
 }
 
@@ -1325,6 +1339,158 @@ static const struct attribute_group *uniwill_groups[] = {
 	NULL
 };
 
+#define FAN_SAFETY_TEMP_C	80
+#define FAN_SAFETY_DUTY		(PWM_MAX * 30 / 100)
+
+static int uniwill_fan_write_table_point(struct uniwill_data *data, int channel, int point,
+					 u8 start, u8 end, u8 speed)
+{
+	unsigned int temp_end = channel ? EC_ADDR_GPU_TEMP_END_TABLE : EC_ADDR_CPU_TEMP_END_TABLE;
+	unsigned int temp_start = channel ? EC_ADDR_GPU_TEMP_START_TABLE :
+					    EC_ADDR_CPU_TEMP_START_TABLE;
+	unsigned int speed_addr = channel ? EC_ADDR_GPU_FAN_SPEED_TABLE :
+					    EC_ADDR_CPU_FAN_SPEED_TABLE;
+	int ret;
+
+	ret = regmap_write(data->regmap, temp_start + point, start);
+	if (ret)
+		return ret;
+	ret = regmap_write(data->regmap, temp_end + point, end);
+	if (ret)
+		return ret;
+	return regmap_write(data->regmap, speed_addr + point, speed);
+}
+
+static int uniwill_fan_apply_duty(struct uniwill_data *data, int channel)
+{
+	unsigned int speed_addr = channel ? EC_ADDR_GPU_FAN_SPEED_TABLE :
+					    EC_ADDR_CPU_FAN_SPEED_TABLE;
+	u8 duty = data->pwm_duty[channel];
+	u8 safe = max_t(u8, duty, FAN_SAFETY_DUTY);
+	int ret;
+
+	if (duty == 0)
+		duty = 1;
+
+	ret = regmap_write(data->regmap, speed_addr, duty);
+	if (ret)
+		return ret;
+	return regmap_write(data->regmap, speed_addr + 1, safe);
+}
+
+static int uniwill_fan_init_channel_table(struct uniwill_data *data, int channel)
+{
+	u8 duty = data->pwm_duty[channel];
+	u8 safe = max_t(u8, duty, FAN_SAFETY_DUTY);
+	int i, ret;
+
+	if (duty == 0)
+		duty = 1;
+
+	ret = uniwill_fan_write_table_point(data, channel, 0, 0, FAN_SAFETY_TEMP_C - 1, duty);
+	if (ret)
+		return ret;
+	ret = uniwill_fan_write_table_point(data, channel, 1, FAN_SAFETY_TEMP_C, 0xff, safe);
+	if (ret)
+		return ret;
+
+	for (i = 2; i < FAN_TABLE_LENGTH; i++) {
+		ret = uniwill_fan_write_table_point(data, channel, i, 0xff, 0xff, 0);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+static int uniwill_fan_enable_tables(struct uniwill_data *data)
+{
+	int ret;
+
+	if (data->fan_tables_ready)
+		return 0;
+
+	ret = regmap_set_bits(data->regmap, EC_ADDR_UNIVERSAL_FAN_CTRL, SPLIT_TABLES);
+	if (ret)
+		return ret;
+	ret = uniwill_fan_init_channel_table(data, 0);
+	if (ret)
+		return ret;
+	if (uniwill_device_supports(data, UNIWILL_FEATURE_SECONDARY_FAN)) {
+		ret = uniwill_fan_init_channel_table(data, 1);
+		if (ret)
+			return ret;
+	}
+	ret = regmap_set_bits(data->regmap, EC_ADDR_AP_OEM_6, ENABLE_UNIVERSAL_FAN_CTRL);
+	if (ret)
+		return ret;
+
+	data->fan_tables_ready = true;
+	return 0;
+}
+
+static int uniwill_fan_disable_tables(struct uniwill_data *data)
+{
+	int ret;
+
+	if (!data->fan_tables_ready)
+		return 0;
+
+	ret = regmap_clear_bits(data->regmap, EC_ADDR_AP_OEM_6, ENABLE_UNIVERSAL_FAN_CTRL);
+	if (ret)
+		return ret;
+	ret = regmap_clear_bits(data->regmap, EC_ADDR_UNIVERSAL_FAN_CTRL, SPLIT_TABLES);
+	if (ret)
+		return ret;
+
+	data->fan_tables_ready = false;
+	return 0;
+}
+
+static int uniwill_fan_set_enable(struct uniwill_data *data, int channel, long val)
+{
+	int ret;
+
+	if (val != 1 && val != 2)
+		return -EINVAL;
+
+	guard(mutex)(&data->fan_lock);
+
+	if (val == 2) {
+		data->pwm_enable[channel] = 2;
+		if (data->pwm_enable[0] == 2 &&
+		    (!uniwill_device_supports(data, UNIWILL_FEATURE_SECONDARY_FAN) ||
+		     data->pwm_enable[1] == 2))
+			return uniwill_fan_disable_tables(data);
+		return 0;
+	}
+
+	data->pwm_enable[channel] = 1;
+	ret = uniwill_fan_enable_tables(data);
+	if (ret)
+		return ret;
+	return uniwill_fan_apply_duty(data, channel);
+}
+
+static int uniwill_fan_set_pwm(struct uniwill_data *data, int channel, long val)
+{
+	int ret;
+
+	if (val < 0 || val > U8_MAX)
+		return -EINVAL;
+
+	guard(mutex)(&data->fan_lock);
+
+	data->pwm_duty[channel] = fixp_linear_interpolate(0, 0, U8_MAX, PWM_MAX, val);
+	if (data->pwm_enable[channel] != 1) {
+		data->pwm_enable[channel] = 1;
+		ret = uniwill_fan_enable_tables(data);
+		if (ret)
+			return ret;
+	}
+	return uniwill_fan_apply_duty(data, channel);
+}
+
 static umode_t uniwill_is_visible(const void *drvdata, enum hwmon_sensor_types type, u32 attr,
 				  int channel)
 {
@@ -1345,6 +1511,19 @@ static umode_t uniwill_is_visible(const void *drvdata, enum hwmon_sensor_types t
 		}
 		break;
 	case hwmon_fan:
+		switch (channel) {
+		case 0:
+			feature = UNIWILL_FEATURE_PRIMARY_FAN;
+			break;
+		case 1:
+			feature = UNIWILL_FEATURE_SECONDARY_FAN;
+			break;
+		default:
+			return 0;
+		}
+		if (uniwill_device_supports(data, feature))
+			return 0444;
+		return 0;
 	case hwmon_pwm:
 		switch (channel) {
 		case 0:
@@ -1356,7 +1535,16 @@ static umode_t uniwill_is_visible(const void *drvdata, enum hwmon_sensor_types t
 		default:
 			return 0;
 		}
-		break;
+		if (!uniwill_device_supports(data, feature))
+			return 0;
+		if (attr == hwmon_pwm_enable) {
+			if (uniwill_device_supports(data, UNIWILL_FEATURE_FAN_CONTROL))
+				return 0644;
+			return 0;
+		}
+		if (uniwill_device_supports(data, UNIWILL_FEATURE_FAN_CONTROL))
+			return 0644;
+		return 0444;
 	default:
 		return 0;
 	}
@@ -1413,6 +1601,15 @@ static int uniwill_read(struct device *dev, enum hwmon_sensor_types type, u32 at
 		*val = be16_to_cpu(rpm);
 		return 0;
 	case hwmon_pwm:
+		if (attr == hwmon_pwm_enable) {
+			*val = data->pwm_enable[channel];
+			return 0;
+		}
+		if (data->pwm_enable[channel] == 1) {
+			*val = fixp_linear_interpolate(0, 0, PWM_MAX, U8_MAX,
+						       data->pwm_duty[channel]);
+			return 0;
+		}
 		switch (channel) {
 		case 0:
 			ret = regmap_read(data->regmap, EC_ADDR_PWM_1, &value);
@@ -1429,6 +1626,26 @@ static int uniwill_read(struct device *dev, enum hwmon_sensor_types type, u32 at
 
 		*val = fixp_linear_interpolate(0, 0, PWM_MAX, U8_MAX, value);
 		return 0;
+	default:
+		return -EOPNOTSUPP;
+	}
+}
+
+static int uniwill_write(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel,
+			 long val)
+{
+	struct uniwill_data *data = dev_get_drvdata(dev);
+
+	if (type != hwmon_pwm)
+		return -EOPNOTSUPP;
+	if (!uniwill_device_supports(data, UNIWILL_FEATURE_FAN_CONTROL))
+		return -EOPNOTSUPP;
+
+	switch (attr) {
+	case hwmon_pwm_enable:
+		return uniwill_fan_set_enable(data, channel, val);
+	case hwmon_pwm_input:
+		return uniwill_fan_set_pwm(data, channel, val);
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -1452,6 +1669,7 @@ static int uniwill_read_string(struct device *dev, enum hwmon_sensor_types type,
 static const struct hwmon_ops uniwill_ops = {
 	.is_visible = uniwill_is_visible,
 	.read = uniwill_read,
+	.write = uniwill_write,
 	.read_string = uniwill_read_string,
 };
 
@@ -1464,8 +1682,8 @@ static const struct hwmon_channel_info * const uniwill_info[] = {
 			   HWMON_F_INPUT | HWMON_F_LABEL,
 			   HWMON_F_INPUT | HWMON_F_LABEL),
 	HWMON_CHANNEL_INFO(pwm,
-			   HWMON_PWM_INPUT,
-			   HWMON_PWM_INPUT),
+			   HWMON_PWM_INPUT | HWMON_PWM_ENABLE,
+			   HWMON_PWM_INPUT | HWMON_PWM_ENABLE),
 	NULL
 };
 
@@ -1477,12 +1695,25 @@ static const struct hwmon_chip_info uniwill_chip_info = {
 static int uniwill_hwmon_init(struct uniwill_data *data)
 {
 	struct device *hdev;
+	unsigned int value;
+	int ret;
 
 	if (!uniwill_device_supports(data, UNIWILL_FEATURE_CPU_TEMP) &&
 	    !uniwill_device_supports(data, UNIWILL_FEATURE_GPU_TEMP) &&
 	    !uniwill_device_supports(data, UNIWILL_FEATURE_PRIMARY_FAN) &&
 	    !uniwill_device_supports(data, UNIWILL_FEATURE_SECONDARY_FAN))
 		return 0;
+
+	data->pwm_enable[0] = 2;
+	data->pwm_enable[1] = 2;
+	if (uniwill_device_supports(data, UNIWILL_FEATURE_FAN_CONTROL)) {
+		ret = regmap_read(data->regmap, EC_ADDR_PWM_1, &value);
+		if (!ret)
+			data->pwm_duty[0] = value;
+		ret = regmap_read(data->regmap, EC_ADDR_PWM_2, &value);
+		if (!ret)
+			data->pwm_duty[1] = value;
+	}
 
 	hdev = devm_hwmon_device_register_with_info(data->dev, "uniwill", data,
 						    &uniwill_chip_info, NULL);
@@ -2280,6 +2511,7 @@ static void uniwill_disable_manual_control(void *context)
 {
 	struct uniwill_data *data = context;
 
+	uniwill_fan_disable_tables(data);
 	regmap_clear_bits(data->regmap, EC_ADDR_AP_OEM, ENABLE_MANUAL_CTRL);
 }
 
@@ -2328,6 +2560,10 @@ static int uniwill_probe(struct platform_device *pdev)
 	data->regmap = regmap;
 
 	ret = devm_mutex_init(&pdev->dev, &data->super_key_lock);
+	if (ret < 0)
+		return ret;
+
+	ret = devm_mutex_init(&pdev->dev, &data->fan_lock);
 	if (ret < 0)
 		return ret;
 
@@ -2382,6 +2618,7 @@ static void uniwill_shutdown(struct platform_device *pdev)
 {
 	struct uniwill_data *data = platform_get_drvdata(pdev);
 
+	uniwill_fan_disable_tables(data);
 	regmap_clear_bits(data->regmap, EC_ADDR_AP_OEM, ENABLE_MANUAL_CTRL);
 }
 
@@ -2686,6 +2923,7 @@ static struct uniwill_device_descriptor medion_erazer_major_15_x1_descriptor __i
 		    UNIWILL_FEATURE_GPU_TEMP |
 		    UNIWILL_FEATURE_PRIMARY_FAN |
 		    UNIWILL_FEATURE_SECONDARY_FAN |
+		    UNIWILL_FEATURE_FAN_CONTROL |
 		    UNIWILL_FEATURE_NVIDIA_CTGP_CONTROL |
 		    UNIWILL_FEATURE_USB_C_POWER_PRIORITY |
 		    UNIWILL_FEATURE_KEYBOARD_BACKLIGHT |

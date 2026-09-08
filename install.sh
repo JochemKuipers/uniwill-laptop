@@ -12,7 +12,7 @@ cp "$SRC/Makefile" "$SRC/dkms.conf" "$SRC/uniwill-acpi.c" "$SRC/uniwill-wmi.c" "
 if ! dkms status -m uniwill-laptop -v 1.0 | grep -q uniwill-laptop; then
 	dkms add -m uniwill-laptop -v 1.0
 fi
-dkms build -m uniwill-laptop -v 1.0
+dkms build -m uniwill-laptop -v 1.0 --force
 dkms install -m uniwill-laptop -v 1.0 --force
 
 cp "$SRC/uniwill-laptop.conf" /etc/modules-load.d/uniwill-laptop.conf
@@ -37,6 +37,15 @@ for led in /sys/class/leds/uniwill:*; do
 		if [ -e "$led/$f" ]; then
 			chgrp plugdev "$led/$f"
 			chmod 664 "$led/$f"
+		fi
+	done
+done
+for d in /sys/class/hwmon/hwmon*; do
+	[ "$(cat "$d/name" 2>/dev/null)" = uniwill ] || continue
+	for f in pwm1 pwm2 pwm1_enable pwm2_enable; do
+		if [ -e "$d/$f" ]; then
+			chgrp plugdev "$d/$f"
+			chmod 664 "$d/$f"
 		fi
 	done
 done
