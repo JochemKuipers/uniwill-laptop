@@ -1,5 +1,5 @@
 Name:           uniwill-laptop
-Version:        1.0
+Version:        1.0.1
 Release:        1%{?dist}
 Summary:        Uniwill / Medion ERAZER laptop extras
 License:        GPL-2.0-only
@@ -79,5 +79,8 @@ fi
 %{_datadir}/applications/uniwill-control.desktop
 
 %changelog
+* Tue Sep 08 2026 Jochem Kuipers <jochem@kuipers.cc> - 1.0.1-1
+- Add CoolerControl-compatible fan PWM control
+
 * Mon Sep 07 2026 Jochem Kuipers <jochem@kuipers.cc> - 1.0-1
 - Initial package for MEDION ERAZER Major 15 X1

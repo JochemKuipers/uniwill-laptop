@@ -1,3 +1,9 @@
+uniwill-laptop (1.0.1-1) unstable; urgency=medium
+
+  * Add CoolerControl-compatible fan PWM control via EC fan tables.
+
+ -- Jochem Kuipers <jochem@kuipers.cc>  Tue, 08 Sep 2026 21:05:00 +0200
+
 uniwill-laptop (1.0-2) unstable; urgency=medium
 
   * Depend on Qt 6 libs under both Ubuntu t64 and Debian/PikaOS names.

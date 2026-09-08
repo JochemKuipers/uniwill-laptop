@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VER=1.0
+VER=1.0.1
 docker run --rm -v "$ROOT:/src:ro" -v "$ROOT/dist:/out" -w /tmp fedora:42 bash -lc "
 set -euo pipefail
 dnf install -y rpm-build cmake gcc-c++ qt6-qtbase-devel desktop-file-utils systemd-rpm-macros make tar gzip
