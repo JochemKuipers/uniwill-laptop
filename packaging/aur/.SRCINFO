@@ -1,13 +1,13 @@
 pkgbase = uniwill-laptop
-	pkgver = 1.0
+	pkgver = 1.0.4
 	pkgrel = 1
 	url = https://github.com/JochemKuipers/uniwill-laptop
 	arch = x86_64
 	license = GPL-2.0-only
 	makedepends = cmake
 	makedepends = qt6-base
-	source = uniwill-laptop-1.0.tar.gz::https://github.com/JochemKuipers/uniwill-laptop/archive/refs/tags/v1.0.tar.gz
-	sha256sums = 7f645dcd4ea396dee27c2145796bf724e9f875645183369d456a3f028a3c09d7
+	source = uniwill-laptop-1.0.4.tar.gz::https://github.com/JochemKuipers/uniwill-laptop/archive/refs/tags/v1.0.4.tar.gz
+	sha256sums = 8988463cb10142459da1051f2bbef07c7721baf8e03a3c01d688193f9ff63032
 
 pkgname = uniwill-laptop-dkms
 	pkgdesc = DKMS driver for Uniwill / Medion ERAZER laptops
@@ -16,6 +16,6 @@ pkgname = uniwill-laptop-dkms
 	install = uniwill-laptop-dkms.install
 
 pkgname = uniwill-control
-	pkgdesc = Qt control app for Uniwill / Medion ERAZER laptops
+	pkgdesc = Erazer Control — Qt app and hotkey OSD for Uniwill / Medion ERAZER laptops
 	depends = qt6-base
 	depends = uniwill-laptop-dkms
