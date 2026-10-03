@@ -29,6 +29,7 @@ Depends: ${shlibs:Depends}, ${misc:Depends}, uniwill-laptop-dkms,
 Description: Qt control app for Uniwill / Medion ERAZER laptops
  Desktop app to set keyboard RGB, the front LED strip, Fn lock, USB-C
  power split, extra GPU power, and to read temperatures and fans.
+ Also installs an autostart OSD for performance modes and hotkey feedback.
 
 Package: uniwill-laptop
 Architecture: all

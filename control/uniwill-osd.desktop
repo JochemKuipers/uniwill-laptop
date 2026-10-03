@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Uniwill OSD
+Comment=On-screen display for ERAZER / Uniwill performance modes and hotkeys
+Exec=uniwill-control --osd
+Icon=preferences-desktop-keyboard-shortcuts
+Terminal=false
+Categories=Settings;HardwareSettings;Qt;
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+X-KDE-autostart-after=panel
+StartupNotify=false

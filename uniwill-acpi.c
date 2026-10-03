@@ -39,6 +39,7 @@
 #include <linux/mutex.h>
 #include <linux/notifier.h>
 #include <linux/platform_device.h>
+#include <linux/platform_profile.h>
 #include <linux/pm.h>
 #include <linux/printk.h>
 #include <linux/regmap.h>
@@ -184,6 +185,16 @@
 #define FAN_MODE_HIGH			BIT(5)
 #define FAN_MODE_BOOST			BIT(6)
 #define FAN_MODE_USER			BIT(7)
+/*
+ * Firmware power modes (BIOS "office/balance/turbo"). The ACPI tables name
+ * BIT(4) TBME and BIT(7) UFME and only evaluate those two bits; the values
+ * below are exactly what the EC itself stores when the mode button is pressed.
+ * Confirmed against Erazer GCUService SetFanMode (EC 0x0751).
+ */
+#define PERF_MODE_MASK			(FAN_MODE_USER | FAN_MODE_HIGH | FAN_MODE_TURBO)
+#define PERF_MODE_OFFICE		(FAN_MODE_USER | FAN_MODE_HIGH)
+#define PERF_MODE_BALANCE		FAN_MODE_HIGH
+#define PERF_MODE_TURBO			(FAN_MODE_HIGH | FAN_MODE_TURBO)
 
 #define EC_ADDR_PWM_1			0x075B
 
@@ -370,6 +381,7 @@
 #define UNIWILL_FEATURE_AC_AUTO_BOOT		BIT(13)
 #define UNIWILL_FEATURE_USB_POWERSHARE		BIT(14)
 #define UNIWILL_FEATURE_FAN_CONTROL		BIT(15)
+#define UNIWILL_FEATURE_PERFORMANCE_MODES	BIT(16)
 
 enum usb_c_power_priority_options {
 	USB_C_POWER_PRIORITY_CHARGING = 0,
@@ -423,6 +435,8 @@ struct uniwill_data {
 	u8 pwm_enable[2];
 	u8 pwm_duty[2];
 	bool fan_tables_ready;
+	struct device *ppdev;
+	enum platform_profile_option last_profile; /* last profile read or written */
 };
 
 struct uniwill_battery_entry {
@@ -607,6 +621,7 @@ static bool uniwill_writeable_reg(struct device *dev, unsigned int reg)
 	case EC_ADDR_LIGHTBAR_AC_GREEN:
 	case EC_ADDR_LIGHTBAR_AC_BLUE:
 	case EC_ADDR_BIOS_OEM:
+	case EC_ADDR_MANUAL_FAN_CTRL:
 	case EC_ADDR_TRIGGER:
 	case EC_ADDR_RGB_RED:
 	case EC_ADDR_RGB_GREEN:
@@ -651,6 +666,7 @@ static bool uniwill_readable_reg(struct device *dev, unsigned int reg)
 	case EC_ADDR_LIGHTBAR_AC_GREEN:
 	case EC_ADDR_LIGHTBAR_AC_BLUE:
 	case EC_ADDR_BIOS_OEM:
+	case EC_ADDR_MANUAL_FAN_CTRL:
 	case EC_ADDR_PWM_1:
 	case EC_ADDR_PWM_2:
 	case EC_ADDR_SUPPORT_2:
@@ -693,6 +709,7 @@ static bool uniwill_volatile_reg(struct device *dev, unsigned int reg)
 	case EC_ADDR_SECOND_FAN_RPM_2:
 	case EC_ADDR_BAT_ALERT:
 	case EC_ADDR_BIOS_OEM:
+	case EC_ADDR_MANUAL_FAN_CTRL:
 	case EC_ADDR_PWM_1:
 	case EC_ADDR_PWM_2:
 	case EC_ADDR_SUPPORT_2:
@@ -2399,6 +2416,113 @@ static int uniwill_battery_init(struct uniwill_data *data)
 	return devm_battery_hook_register(data->dev, &data->hook);
 }
 
+static int uniwill_platform_profile_probe(void *drvdata, unsigned long *choices)
+{
+	set_bit(PLATFORM_PROFILE_LOW_POWER, choices);
+	set_bit(PLATFORM_PROFILE_BALANCED, choices);
+	set_bit(PLATFORM_PROFILE_PERFORMANCE, choices);
+
+	return 0;
+}
+
+static int uniwill_platform_profile_get(struct device *dev,
+					enum platform_profile_option *profile)
+{
+	struct uniwill_data *data = dev_get_drvdata(dev);
+	unsigned int value;
+	int ret;
+
+	ret = regmap_read(data->regmap, EC_ADDR_MANUAL_FAN_CTRL, &value);
+	if (ret < 0)
+		return ret;
+
+	/* Same decision as the firmware's PMSC method / GCUService GetFanMode */
+	switch (value & (FAN_MODE_USER | FAN_MODE_TURBO)) {
+	case FAN_MODE_USER:
+		*profile = PLATFORM_PROFILE_LOW_POWER;
+		break;
+	case FAN_MODE_TURBO:
+		*profile = PLATFORM_PROFILE_PERFORMANCE;
+		break;
+	default:
+		*profile = PLATFORM_PROFILE_BALANCED;
+		break;
+	}
+
+	WRITE_ONCE(data->last_profile, *profile);
+
+	return 0;
+}
+
+static int uniwill_platform_profile_set(struct device *dev,
+					enum platform_profile_option profile)
+{
+	struct uniwill_data *data = dev_get_drvdata(dev);
+	unsigned int value;
+	int ret;
+
+	switch (profile) {
+	case PLATFORM_PROFILE_LOW_POWER:
+		value = PERF_MODE_OFFICE;
+		break;
+	case PLATFORM_PROFILE_BALANCED:
+		value = PERF_MODE_BALANCE;
+		break;
+	case PLATFORM_PROFILE_PERFORMANCE:
+		value = PERF_MODE_TURBO;
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	/* The EC applies the mode (LED, power limits, ACPI notifications) itself */
+	ret = regmap_update_bits(data->regmap, EC_ADDR_MANUAL_FAN_CTRL, PERF_MODE_MASK,
+				 value);
+	if (ret < 0)
+		return ret;
+
+	WRITE_ONCE(data->last_profile, profile);
+
+	return 0;
+}
+
+static const struct platform_profile_ops uniwill_platform_profile_ops = {
+	.probe = uniwill_platform_profile_probe,
+	.profile_get = uniwill_platform_profile_get,
+	.profile_set = uniwill_platform_profile_set,
+};
+
+static int uniwill_platform_profile_init(struct uniwill_data *data)
+{
+	if (!uniwill_device_supports(data, UNIWILL_FEATURE_PERFORMANCE_MODES))
+		return 0;
+
+	data->ppdev = devm_platform_profile_register(data->dev, DRIVER_NAME, data,
+						     &uniwill_platform_profile_ops);
+	if (IS_ERR(data->ppdev))
+		return PTR_ERR(data->ppdev);
+
+	return uniwill_platform_profile_get(data->ppdev, &data->last_profile);
+}
+
+/*
+ * The EC only cycles the mode on its own until the OS sets a mode once; after
+ * that the button just reports UNIWILL_OSD_PERFORMANCE_MODE_TOGGLE. Handle
+ * both cases: if the EC already switched, only notify userspace, otherwise
+ * cycle the profile ourselves.
+ */
+static void uniwill_platform_profile_button(struct uniwill_data *data)
+{
+	enum platform_profile_option before = READ_ONCE(data->last_profile), now;
+
+	msleep(100); /* give the EC time to apply its own switch, if any */
+
+	if (!uniwill_platform_profile_get(data->ppdev, &now) && now != before)
+		platform_profile_notify(data->ppdev);
+	else
+		platform_profile_cycle();
+}
+
 static int uniwill_notifier_call(struct notifier_block *nb, unsigned long action, void *dummy)
 {
 	struct uniwill_data *data = container_of(nb, struct uniwill_data, nb);
@@ -2445,6 +2569,15 @@ static int uniwill_notifier_call(struct notifier_block *nb, unsigned long action
 		sysfs_notify(&data->dev->kobj, NULL, "fn_lock");
 
 		return NOTIFY_OK;
+	case UNIWILL_OSD_SUPER_KEY_DISABLE:
+	case UNIWILL_OSD_SUPER_KEY_ENABLE:
+	case UNIWILL_OSD_SUPER_KEY_STATE_CHANGED:
+		if (!uniwill_device_supports(data, UNIWILL_FEATURE_SUPER_KEY))
+			return NOTIFY_DONE;
+
+		sysfs_notify(&data->dev->kobj, NULL, "super_key_enable");
+
+		return NOTIFY_OK;
 	case UNIWILL_OSD_KB_LED_LEVEL0:
 		if (!uniwill_device_supports(data, UNIWILL_FEATURE_KEYBOARD_BACKLIGHT))
 			return NOTIFY_DONE;
@@ -2470,6 +2603,12 @@ static int uniwill_notifier_call(struct notifier_block *nb, unsigned long action
 			return NOTIFY_DONE;
 
 		return notifier_from_errno(uniwill_notify_kbd_led(data, 4));
+	case UNIWILL_OSD_PERFORMANCE_MODE_TOGGLE:
+		if (uniwill_device_supports(data, UNIWILL_FEATURE_PERFORMANCE_MODES)) {
+			uniwill_platform_profile_button(data);
+			return NOTIFY_OK;
+		}
+		fallthrough;
 	default:
 		mutex_lock(&data->input_lock);
 		sparse_keymap_report_event(data->input_device, action, 1, true);
@@ -2608,6 +2747,10 @@ static int uniwill_probe(struct platform_device *pdev)
 		return ret;
 
 	ret = usb_c_power_priority_init(data);
+	if (ret < 0)
+		return ret;
+
+	ret = uniwill_platform_profile_init(data);
 	if (ret < 0)
 		return ret;
 
@@ -2826,6 +2969,14 @@ static int uniwill_resume_nvidia_ctgp(struct uniwill_data *data)
 			       CTGP_DB_DB_ENABLE | CTGP_DB_CTGP_ENABLE);
 }
 
+static int uniwill_resume_platform_profile(struct uniwill_data *data)
+{
+	if (!uniwill_device_supports(data, UNIWILL_FEATURE_PERFORMANCE_MODES))
+		return 0;
+
+	return uniwill_platform_profile_set(data->ppdev, READ_ONCE(data->last_profile));
+}
+
 static int uniwill_resume_usb_c_power_priority(struct uniwill_data *data)
 {
 	if (!uniwill_device_supports(data, UNIWILL_FEATURE_USB_C_POWER_PRIORITY))
@@ -2873,7 +3024,11 @@ static int uniwill_resume(struct device *dev)
 	if (ret < 0)
 		return ret;
 
-	return uniwill_resume_usb_c_power_priority(data);
+	ret = uniwill_resume_usb_c_power_priority(data);
+	if (ret < 0)
+		return ret;
+
+	return uniwill_resume_platform_profile(data);
 }
 
 static DEFINE_SIMPLE_DEV_PM_OPS(uniwill_pm_ops, uniwill_suspend, uniwill_resume);
@@ -2928,7 +3083,8 @@ static struct uniwill_device_descriptor medion_erazer_major_15_x1_descriptor __i
 		    UNIWILL_FEATURE_USB_C_POWER_PRIORITY |
 		    UNIWILL_FEATURE_KEYBOARD_BACKLIGHT |
 		    UNIWILL_FEATURE_AC_AUTO_BOOT |
-		    UNIWILL_FEATURE_USB_POWERSHARE,
+		    UNIWILL_FEATURE_USB_POWERSHARE |
+		    UNIWILL_FEATURE_PERFORMANCE_MODES,
 	.kbd_led_single_color = false,
 	.kbd_led_max_brightness = 4,
 	.lightbar_max_brightness = 200,

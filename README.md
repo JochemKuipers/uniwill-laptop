@@ -25,11 +25,11 @@ yay -S uniwill-laptop-dkms uniwill-control
 
 ### Fedora
 
-Install the RPMs from the [v1.0 release](https://github.com/JochemKuipers/uniwill-laptop/releases/tag/v1.0):
+Install the RPMs from the [latest release](https://github.com/JochemKuipers/uniwill-laptop/releases/latest):
 
 ```sh
-sudo dnf install ./uniwill-laptop-dkms-1.0.1-1.fc42.noarch.rpm \
-  ./uniwill-laptop-control-1.0.1-1.fc42.x86_64.rpm
+sudo dnf install ./uniwill-laptop-dkms-1.0.3-1.fc42.noarch.rpm \
+  ./uniwill-laptop-control-1.0.3-1.fc42.x86_64.rpm
 ```
 
 ## From source

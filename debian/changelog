@@ -1,3 +1,10 @@
+uniwill-laptop (1.0.3-1) unstable; urgency=medium
+
+  * Add platform performance modes (Office/Balance/Turbo) and Fn key cycling.
+  * Add Control Center-style OSD for performance modes and hotkeys.
+
+ -- Jochem Kuipers <jochem@kuipers.cc>  Sat, 03 Oct 2026 18:42:00 +0200
+
 uniwill-laptop (1.0.1-1) unstable; urgency=medium
 
   * Add CoolerControl-compatible fan PWM control via EC fan tables.

@@ -38,7 +38,21 @@ two fans. Userspace applications can access sensor readings over the hwmon sysfs
 Platform profile
 ----------------
 
-Support for changing the platform performance mode is currently not implemented.
+On supported devices (currently the MEDION ERAZER Major 15 X1), the driver exposes
+the firmware power modes (Office / Balance / Turbo) through the standard
+``platform_profile`` sysfs interface as ``low-power``, ``balanced`` and
+``performance``. These map to bit patterns on EC register ``0x0751``
+(``EC_ADDR_MANUAL_FAN_CTRL``); writing them makes the EC apply the mode LED and
+its own power/fan policy.
+
+The Fn performance-mode key cycles these profiles. Until userspace (or the
+driver) has written a mode once, the embedded controller may still cycle the
+mode itself; afterwards the key only reports a WMI event and the driver cycles
+the platform profile.
+
+The ``uniwill-control --osd`` helper (autostart desktop file ``uniwill-osd``)
+shows a Control Center-style overlay when the performance mode, Fn lock,
+Windows-key lock, touchpad-hotkey setting, or keyboard backlight level changes.
 
 Battery Charging Control
 ------------------------
