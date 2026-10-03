@@ -4,7 +4,7 @@ starting with kernel version 6.19. This repository mainly contains experimental 
 
 ## Packages
 
-Binaries for **v1.0** are on [GitHub Releases](https://github.com/JochemKuipers/uniwill-laptop/releases/tag/v1.0) (Debian `.deb`, Fedora `.rpm`, and source RPM).
+Binaries are on [GitHub Releases](https://github.com/JochemKuipers/uniwill-laptop/releases/latest) (Debian `.deb`, Fedora `.rpm`, and source RPM).
 
 ### Debian / PikaOS
 
@@ -28,8 +28,8 @@ yay -S uniwill-laptop-dkms uniwill-control
 Install the RPMs from the [latest release](https://github.com/JochemKuipers/uniwill-laptop/releases/latest):
 
 ```sh
-sudo dnf install ./uniwill-laptop-dkms-1.0.3-1.fc42.noarch.rpm \
-  ./uniwill-laptop-control-1.0.3-1.fc42.x86_64.rpm
+sudo dnf install ./uniwill-laptop-dkms-1.0.4-1.fc42.noarch.rpm \
+  ./uniwill-laptop-control-1.0.4-1.fc42.x86_64.rpm
 ```
 
 ## From source

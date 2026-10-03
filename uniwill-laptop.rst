@@ -35,24 +35,35 @@ Hwmon interface
 The ``uniwill-laptop`` driver supports reading of the CPU and GPU temperature and supports up to
 two fans. Userspace applications can access sensor readings over the hwmon sysfs interface.
 
-Platform profile
-----------------
+Platform profile and power packages
+-----------------------------------
 
 On supported devices (currently the MEDION ERAZER Major 15 X1), the driver exposes
 the firmware power modes (Office / Balance / Turbo) through the standard
-``platform_profile`` sysfs interface as ``low-power``, ``balanced`` and
-``performance``. These map to bit patterns on EC register ``0x0751``
-(``EC_ADDR_MANUAL_FAN_CTRL``); writing them makes the EC apply the mode LED and
-its own power/fan policy.
+``platform_profile`` sysfs interface as ``low-power``, ``balanced``,
+``performance``, and a software-only ``custom`` choice. The first three map to
+bit patterns on EC register ``0x0751`` (``EC_ADDR_MANUAL_FAN_CTRL``). ``custom``
+keeps those bits unchanged so userspace can apply a stored PL/cTGP/fan package.
 
-The Fn performance-mode key cycles these profiles. Until userspace (or the
-driver) has written a mode once, the embedded controller may still cycle the
-mode itself; afterwards the key only reports a WMI event and the driver cycles
-the platform profile.
+The same four names are also available as ``performance_mode`` on the platform
+device (plugdev-writable via udev). Prefer that attribute from desktop helpers.
+
+Power limits ``pl1_watt`` / ``pl2_watt`` / ``pl4_watt`` and fan curves
+``cpu_fan_curve`` / ``gpu_fan_curve`` are documented in
+Documentation/ABI/testing/sysfs-driver-uniwill-laptop. Fan control precedence is
+**flat hwmon PWM > curve > firmware auto**. The driver always keeps at least 30%
+duty at or above 95 °C when tables are active.
+
+The Fn performance-mode key cycles these profiles (including Custom). Until
+userspace (or the driver) has written a mode once, the embedded controller may
+still cycle the mode itself; afterwards the key only reports a WMI event and the
+driver cycles the platform profile.
 
 The ``uniwill-control --osd`` helper (autostart desktop file ``uniwill-osd``)
 shows a Control Center-style overlay when the performance mode, Fn lock,
 Windows-key lock, touchpad-hotkey setting, or keyboard backlight level changes.
+It also loads ``~/.config/uniwill-control/profiles.json`` and applies the active
+profile's PL/cTGP/fan curves whenever ``performance_mode`` changes.
 
 Battery Charging Control
 ------------------------

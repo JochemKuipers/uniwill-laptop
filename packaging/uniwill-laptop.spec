@@ -1,5 +1,5 @@
 Name:           uniwill-laptop
-Version:        1.0.3
+Version:        1.0.4
 Release:        1%{?dist}
 Summary:        Uniwill / Medion ERAZER laptop extras
 License:        GPL-2.0-only
@@ -32,9 +32,9 @@ Requires:       %{name}-dkms
 Requires:       qt6-qtbase
 
 %description control
-Desktop app to set keyboard RGB, the front LED strip, Fn lock, USB-C
-power split, extra GPU power, and to read temperatures and fans.
-Also installs an autostart OSD for performance modes and hotkey feedback.
+Erazer Control: keyboard RGB, LED strip, profiles (PL/fan curves), power
+knobs, and an Info page for live temps/fans/power. Also installs an
+autostart OSD that applies stored profiles on mode change.
 
 %prep
 %autosetup
@@ -82,6 +82,9 @@ fi
 /etc/xdg/autostart/uniwill-osd.desktop
 
 %changelog
+* Sat Oct 03 2026 Jochem Kuipers <jochem@kuipers.cc> - 1.0.4-1
+- Add power limits, fan curves, Erazer Control profiles, and Info telemetry
+
 * Sat Oct 03 2026 Jochem Kuipers <jochem@kuipers.cc> - 1.0.3-1
 - Add platform performance modes and Control Center-style OSD
 

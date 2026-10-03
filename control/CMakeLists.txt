@@ -11,6 +11,7 @@ add_executable(uniwill-control
 	src/main.cpp
 	src/window.cpp
 	src/osd.cpp
+	src/profiles.cpp
 )
 target_include_directories(uniwill-control PRIVATE src)
 target_link_libraries(uniwill-control PRIVATE Qt6::Widgets)

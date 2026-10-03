@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
-Name=ERAZER Major 15 X1
-Comment=Keyboard lights, front LED strip, hotkeys and power for this Uniwill laptop
+Name=Erazer Control
+Comment=Keyboard lights, front LED strip, hotkeys, profiles and power for Medion ERAZER / Uniwill laptops
 Exec=uniwill-control
 Icon=preferences-desktop-keyboard-shortcuts
 Terminal=false

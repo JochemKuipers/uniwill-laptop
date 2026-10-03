@@ -382,6 +382,12 @@
 #define UNIWILL_FEATURE_USB_POWERSHARE		BIT(14)
 #define UNIWILL_FEATURE_FAN_CONTROL		BIT(15)
 #define UNIWILL_FEATURE_PERFORMANCE_MODES	BIT(16)
+#define UNIWILL_FEATURE_FAN_CURVE		BIT(17)
+#define UNIWILL_FEATURE_POWER_LIMITS		BIT(18)
+
+#define PL_WATT_MIN				15
+#define PL_WATT_MAX				200
+#define FAN_CURVE_MAX_POINTS			FAN_TABLE_LENGTH
 
 enum usb_c_power_priority_options {
 	USB_C_POWER_PRIORITY_CHARGING = 0,
@@ -435,8 +441,16 @@ struct uniwill_data {
 	u8 pwm_enable[2];
 	u8 pwm_duty[2];
 	bool fan_tables_ready;
+	bool fan_curve_active;
+	u8 cpu_curve_len;
+	u8 gpu_curve_len;
+	u8 cpu_curve_temp[FAN_CURVE_MAX_POINTS];
+	u8 cpu_curve_duty[FAN_CURVE_MAX_POINTS];
+	u8 gpu_curve_temp[FAN_CURVE_MAX_POINTS];
+	u8 gpu_curve_duty[FAN_CURVE_MAX_POINTS];
 	struct device *ppdev;
 	enum platform_profile_option last_profile; /* last profile read or written */
+	bool custom_profile; /* software-only custom; EC bits unchanged */
 };
 
 struct uniwill_battery_entry {
@@ -641,6 +655,9 @@ static bool uniwill_writeable_reg(struct device *dev, unsigned int reg)
 	case EC_ADDR_USB_C_POWER_PRIORITY:
 	case EC_ADDR_UNIVERSAL_FAN_CTRL:
 	case EC_ADDR_AP_OEM_6:
+	case EC_ADDR_PL1_SETTING:
+	case EC_ADDR_PL2_SETTING:
+	case EC_ADDR_PL4_SETTING:
 		return true;
 	default:
 		return reg >= EC_ADDR_CPU_TEMP_END_TABLE &&
@@ -691,6 +708,9 @@ static bool uniwill_readable_reg(struct device *dev, unsigned int reg)
 	case EC_ADDR_USB_C_POWER_PRIORITY:
 	case EC_ADDR_UNIVERSAL_FAN_CTRL:
 	case EC_ADDR_AP_OEM_6:
+	case EC_ADDR_PL1_SETTING:
+	case EC_ADDR_PL2_SETTING:
+	case EC_ADDR_PL4_SETTING:
 		return true;
 	default:
 		return reg >= EC_ADDR_CPU_TEMP_END_TABLE &&
@@ -721,6 +741,9 @@ static bool uniwill_volatile_reg(struct device *dev, unsigned int reg)
 	case EC_ADDR_USB_C_POWER_PRIORITY:
 	case EC_ADDR_UNIVERSAL_FAN_CTRL:
 	case EC_ADDR_AP_OEM_6:
+	case EC_ADDR_PL1_SETTING:
+	case EC_ADDR_PL2_SETTING:
+	case EC_ADDR_PL4_SETTING:
 		return true;
 	default:
 		return reg >= EC_ADDR_CPU_TEMP_END_TABLE &&
@@ -1281,6 +1304,294 @@ static ssize_t usb_powershare_high_show(struct device *dev, struct device_attrib
 
 static DEVICE_ATTR_RW(usb_powershare_high);
 
+static int uniwill_pl_store(struct uniwill_data *data, unsigned int reg, const char *buf,
+			    size_t count)
+{
+	unsigned int value;
+	int ret;
+
+	ret = kstrtouint(buf, 0, &value);
+	if (ret < 0)
+		return ret;
+
+	if (value < PL_WATT_MIN || value > PL_WATT_MAX)
+		return -EINVAL;
+
+	ret = regmap_write(data->regmap, reg, value);
+	if (ret < 0)
+		return ret;
+
+	return count;
+}
+
+static ssize_t uniwill_pl_show(struct uniwill_data *data, unsigned int reg, char *buf)
+{
+	unsigned int value;
+	int ret;
+
+	ret = regmap_read(data->regmap, reg, &value);
+	if (ret < 0)
+		return ret;
+
+	return sysfs_emit(buf, "%u\n", value);
+}
+
+static ssize_t pl1_watt_store(struct device *dev, struct device_attribute *attr, const char *buf,
+			      size_t count)
+{
+	return uniwill_pl_store(dev_get_drvdata(dev), EC_ADDR_PL1_SETTING, buf, count);
+}
+
+static ssize_t pl1_watt_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return uniwill_pl_show(dev_get_drvdata(dev), EC_ADDR_PL1_SETTING, buf);
+}
+
+static DEVICE_ATTR_RW(pl1_watt);
+
+static ssize_t pl2_watt_store(struct device *dev, struct device_attribute *attr, const char *buf,
+			      size_t count)
+{
+	return uniwill_pl_store(dev_get_drvdata(dev), EC_ADDR_PL2_SETTING, buf, count);
+}
+
+static ssize_t pl2_watt_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return uniwill_pl_show(dev_get_drvdata(dev), EC_ADDR_PL2_SETTING, buf);
+}
+
+static DEVICE_ATTR_RW(pl2_watt);
+
+static ssize_t pl4_watt_store(struct device *dev, struct device_attribute *attr, const char *buf,
+			      size_t count)
+{
+	return uniwill_pl_store(dev_get_drvdata(dev), EC_ADDR_PL4_SETTING, buf, count);
+}
+
+static ssize_t pl4_watt_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return uniwill_pl_show(dev_get_drvdata(dev), EC_ADDR_PL4_SETTING, buf);
+}
+
+static DEVICE_ATTR_RW(pl4_watt);
+
+static const char *uniwill_performance_mode_name(enum platform_profile_option profile)
+{
+	switch (profile) {
+	case PLATFORM_PROFILE_LOW_POWER:
+		return "low-power";
+	case PLATFORM_PROFILE_BALANCED:
+		return "balanced";
+	case PLATFORM_PROFILE_PERFORMANCE:
+		return "performance";
+	case PLATFORM_PROFILE_CUSTOM:
+		return "custom";
+	default:
+		return "balanced";
+	}
+}
+
+static int uniwill_performance_mode_from_string(const char *buf, enum platform_profile_option *out)
+{
+	if (sysfs_streq(buf, "low-power"))
+		*out = PLATFORM_PROFILE_LOW_POWER;
+	else if (sysfs_streq(buf, "balanced"))
+		*out = PLATFORM_PROFILE_BALANCED;
+	else if (sysfs_streq(buf, "performance"))
+		*out = PLATFORM_PROFILE_PERFORMANCE;
+	else if (sysfs_streq(buf, "custom"))
+		*out = PLATFORM_PROFILE_CUSTOM;
+	else
+		return -EINVAL;
+
+	return 0;
+}
+
+static int uniwill_set_performance_mode(struct uniwill_data *data,
+					enum platform_profile_option profile);
+static int uniwill_get_performance_mode(struct uniwill_data *data,
+					enum platform_profile_option *profile);
+
+static ssize_t performance_mode_store(struct device *dev, struct device_attribute *attr,
+				      const char *buf, size_t count)
+{
+	struct uniwill_data *data = dev_get_drvdata(dev);
+	enum platform_profile_option profile;
+	int ret;
+
+	ret = uniwill_performance_mode_from_string(buf, &profile);
+	if (ret < 0)
+		return ret;
+
+	ret = uniwill_set_performance_mode(data, profile);
+	if (ret < 0)
+		return ret;
+
+	if (data->ppdev)
+		platform_profile_notify(data->ppdev);
+
+	return count;
+}
+
+static ssize_t performance_mode_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct uniwill_data *data = dev_get_drvdata(dev);
+	enum platform_profile_option profile;
+	int ret;
+
+	ret = uniwill_get_performance_mode(data, &profile);
+	if (ret < 0)
+		return ret;
+
+	return sysfs_emit(buf, "%s\n", uniwill_performance_mode_name(profile));
+}
+
+static DEVICE_ATTR_RW(performance_mode);
+
+/* Forward decls for fan-curve helpers defined with the fan table code below */
+static int uniwill_fan_curve_apply(struct uniwill_data *data, int channel, const u8 *temps,
+				   const u8 *duties, u8 n);
+static int uniwill_fan_curve_clear(struct uniwill_data *data);
+static int uniwill_fan_disable_tables(struct uniwill_data *data);
+
+static int uniwill_parse_fan_curve(const char *buf, u8 *temps, u8 *duties, u8 *n)
+{
+	const char *p = buf;
+	unsigned int temp, duty;
+	u8 count = 0;
+	int matched;
+
+	if (sysfs_streq(buf, "auto") || buf[0] == '\0' || buf[0] == '\n') {
+		*n = 0;
+		return 0;
+	}
+
+	while (*p) {
+		while (*p == ' ' || *p == '\t' || *p == '\n')
+			p++;
+		if (!*p)
+			break;
+
+		matched = sscanf(p, "%u:%u", &temp, &duty);
+		if (matched != 2)
+			return -EINVAL;
+		if (temp > U8_MAX || duty > U8_MAX)
+			return -EINVAL;
+		if (count >= FAN_CURVE_MAX_POINTS)
+			return -EINVAL;
+		if (count && temp <= temps[count - 1])
+			return -EINVAL;
+
+		temps[count] = temp;
+		duties[count] = duty;
+		count++;
+
+		while (*p && *p != ' ' && *p != '\t' && *p != '\n')
+			p++;
+	}
+
+	if (!count)
+		return -EINVAL;
+
+	*n = count;
+	return 0;
+}
+
+static ssize_t uniwill_fan_curve_store(struct uniwill_data *data, int channel, const char *buf,
+				       size_t count)
+{
+	u8 temps[FAN_CURVE_MAX_POINTS];
+	u8 duties[FAN_CURVE_MAX_POINTS];
+	u8 n;
+	int ret;
+
+	ret = uniwill_parse_fan_curve(buf, temps, duties, &n);
+	if (ret < 0)
+		return ret;
+
+	guard(mutex)(&data->fan_lock);
+
+	if (!n) {
+		ret = uniwill_fan_curve_clear(data);
+		if (ret < 0)
+			return ret;
+		return count;
+	}
+
+	ret = uniwill_fan_curve_apply(data, channel, temps, duties, n);
+	if (ret < 0)
+		return ret;
+
+	if (channel == 0) {
+		data->cpu_curve_len = n;
+		memcpy(data->cpu_curve_temp, temps, n);
+		memcpy(data->cpu_curve_duty, duties, n);
+	} else {
+		data->gpu_curve_len = n;
+		memcpy(data->gpu_curve_temp, temps, n);
+		memcpy(data->gpu_curve_duty, duties, n);
+	}
+
+	return count;
+}
+
+static ssize_t uniwill_fan_curve_show(struct uniwill_data *data, int channel, char *buf)
+{
+	const u8 *temps, *duties;
+	u8 n;
+	int i, len = 0;
+
+	guard(mutex)(&data->fan_lock);
+
+	if (channel == 0) {
+		n = data->cpu_curve_len;
+		temps = data->cpu_curve_temp;
+		duties = data->cpu_curve_duty;
+	} else {
+		n = data->gpu_curve_len;
+		temps = data->gpu_curve_temp;
+		duties = data->gpu_curve_duty;
+	}
+
+	if (!n || !data->fan_curve_active)
+		return sysfs_emit(buf, "auto\n");
+
+	for (i = 0; i < n; i++) {
+		if (i)
+			len += sysfs_emit_at(buf, len, " ");
+		len += sysfs_emit_at(buf, len, "%u:%u", temps[i], duties[i]);
+	}
+	len += sysfs_emit_at(buf, len, "\n");
+
+	return len;
+}
+
+static ssize_t cpu_fan_curve_store(struct device *dev, struct device_attribute *attr,
+				   const char *buf, size_t count)
+{
+	return uniwill_fan_curve_store(dev_get_drvdata(dev), 0, buf, count);
+}
+
+static ssize_t cpu_fan_curve_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return uniwill_fan_curve_show(dev_get_drvdata(dev), 0, buf);
+}
+
+static DEVICE_ATTR_RW(cpu_fan_curve);
+
+static ssize_t gpu_fan_curve_store(struct device *dev, struct device_attribute *attr,
+				   const char *buf, size_t count)
+{
+	return uniwill_fan_curve_store(dev_get_drvdata(dev), 1, buf, count);
+}
+
+static ssize_t gpu_fan_curve_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return uniwill_fan_curve_show(dev_get_drvdata(dev), 1, buf);
+}
+
+static DEVICE_ATTR_RW(gpu_fan_curve);
+
 static struct attribute *uniwill_attrs[] = {
 	/* Keyboard-related */
 	&dev_attr_fn_lock.attr,
@@ -1294,6 +1605,12 @@ static struct attribute *uniwill_attrs[] = {
 	&dev_attr_usb_c_power_priority.attr,
 	&dev_attr_ac_auto_boot.attr,
 	&dev_attr_usb_powershare_high.attr,
+	&dev_attr_pl1_watt.attr,
+	&dev_attr_pl2_watt.attr,
+	&dev_attr_pl4_watt.attr,
+	&dev_attr_performance_mode.attr,
+	&dev_attr_cpu_fan_curve.attr,
+	&dev_attr_gpu_fan_curve.attr,
 	NULL
 };
 
@@ -1343,6 +1660,28 @@ static umode_t uniwill_attr_is_visible(struct kobject *kobj, struct attribute *a
 			return attr->mode;
 	}
 
+	if (attr == &dev_attr_pl1_watt.attr || attr == &dev_attr_pl2_watt.attr ||
+	    attr == &dev_attr_pl4_watt.attr) {
+		if (uniwill_device_supports(data, UNIWILL_FEATURE_POWER_LIMITS))
+			return attr->mode;
+	}
+
+	if (attr == &dev_attr_performance_mode.attr) {
+		if (uniwill_device_supports(data, UNIWILL_FEATURE_PERFORMANCE_MODES))
+			return attr->mode;
+	}
+
+	if (attr == &dev_attr_cpu_fan_curve.attr) {
+		if (uniwill_device_supports(data, UNIWILL_FEATURE_FAN_CURVE))
+			return attr->mode;
+	}
+
+	if (attr == &dev_attr_gpu_fan_curve.attr) {
+		if (uniwill_device_supports(data, UNIWILL_FEATURE_FAN_CURVE) &&
+		    uniwill_device_supports(data, UNIWILL_FEATURE_SECONDARY_FAN))
+			return attr->mode;
+	}
+
 	return 0;
 }
 
@@ -1356,7 +1695,7 @@ static const struct attribute_group *uniwill_groups[] = {
 	NULL
 };
 
-#define FAN_SAFETY_TEMP_C	80
+#define FAN_SAFETY_TEMP_C	95
 #define FAN_SAFETY_DUTY		(PWM_MAX * 30 / 100)
 
 static int uniwill_fan_write_table_point(struct uniwill_data *data, int channel, int point,
@@ -1420,7 +1759,7 @@ static int uniwill_fan_init_channel_table(struct uniwill_data *data, int channel
 	return 0;
 }
 
-static int uniwill_fan_enable_tables(struct uniwill_data *data)
+static int uniwill_fan_arm_tables(struct uniwill_data *data)
 {
 	int ret;
 
@@ -1430,6 +1769,23 @@ static int uniwill_fan_enable_tables(struct uniwill_data *data)
 	ret = regmap_set_bits(data->regmap, EC_ADDR_UNIVERSAL_FAN_CTRL, SPLIT_TABLES);
 	if (ret)
 		return ret;
+	ret = regmap_set_bits(data->regmap, EC_ADDR_AP_OEM_6, ENABLE_UNIVERSAL_FAN_CTRL);
+	if (ret)
+		return ret;
+
+	data->fan_tables_ready = true;
+	return 0;
+}
+
+static int uniwill_fan_enable_tables(struct uniwill_data *data)
+{
+	int ret;
+
+	ret = uniwill_fan_arm_tables(data);
+	if (ret)
+		return ret;
+
+	/* Flat PWM path always reprograms both channels to a two-point table */
 	ret = uniwill_fan_init_channel_table(data, 0);
 	if (ret)
 		return ret;
@@ -1438,11 +1794,105 @@ static int uniwill_fan_enable_tables(struct uniwill_data *data)
 		if (ret)
 			return ret;
 	}
-	ret = regmap_set_bits(data->regmap, EC_ADDR_AP_OEM_6, ENABLE_UNIVERSAL_FAN_CTRL);
+
+	return 0;
+}
+
+static int uniwill_fan_program_curve_points(struct uniwill_data *data, int channel,
+					    const u8 *temps, const u8 *duties, u8 n)
+{
+	u8 t[FAN_CURVE_MAX_POINTS];
+	u8 d[FAN_CURVE_MAX_POINTS];
+	u8 len = n;
+	int i, ret;
+	bool has_safe = false;
+
+	if (!n || n > FAN_CURVE_MAX_POINTS)
+		return -EINVAL;
+
+	memcpy(t, temps, n);
+	memcpy(d, duties, n);
+
+	for (i = 0; i < len; i++) {
+		if (t[i] >= FAN_SAFETY_TEMP_C) {
+			d[i] = max_t(u8, d[i], FAN_SAFETY_DUTY);
+			has_safe = true;
+		}
+	}
+
+	if (!has_safe) {
+		if (len >= FAN_CURVE_MAX_POINTS)
+			return -EINVAL;
+		t[len] = FAN_SAFETY_TEMP_C;
+		d[len] = FAN_SAFETY_DUTY;
+		len++;
+	}
+
+	for (i = 0; i < len; i++) {
+		u8 end = (i + 1 < len) ? t[i + 1] - 1 : 0xff;
+
+		if (end < t[i])
+			end = t[i];
+		ret = uniwill_fan_write_table_point(data, channel, i, t[i], end, d[i]);
+		if (ret)
+			return ret;
+	}
+
+	for (i = len; i < FAN_TABLE_LENGTH; i++) {
+		ret = uniwill_fan_write_table_point(data, channel, i, 0xff, 0xff, 0);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+static int uniwill_fan_curve_apply(struct uniwill_data *data, int channel, const u8 *temps,
+				   const u8 *duties, u8 n)
+{
+	int ret;
+
+	ret = uniwill_fan_arm_tables(data);
 	if (ret)
 		return ret;
 
-	data->fan_tables_ready = true;
+	ret = uniwill_fan_program_curve_points(data, channel, temps, duties, n);
+	if (ret)
+		return ret;
+
+	/* Leave the other channel alone if it already has a curve; else seed a safe flat */
+	if (channel == 0 && !data->gpu_curve_len &&
+	    uniwill_device_supports(data, UNIWILL_FEATURE_SECONDARY_FAN) &&
+	    !data->fan_curve_active) {
+		ret = uniwill_fan_init_channel_table(data, 1);
+		if (ret)
+			return ret;
+	}
+	if (channel == 1 && !data->cpu_curve_len && !data->fan_curve_active) {
+		ret = uniwill_fan_init_channel_table(data, 0);
+		if (ret)
+			return ret;
+	}
+
+	data->pwm_enable[0] = 2;
+	if (uniwill_device_supports(data, UNIWILL_FEATURE_SECONDARY_FAN))
+		data->pwm_enable[1] = 2;
+	data->fan_curve_active = true;
+
+	return 0;
+}
+
+static int uniwill_fan_curve_clear(struct uniwill_data *data)
+{
+	data->fan_curve_active = false;
+	data->cpu_curve_len = 0;
+	data->gpu_curve_len = 0;
+
+	if (data->pwm_enable[0] == 2 &&
+	    (!uniwill_device_supports(data, UNIWILL_FEATURE_SECONDARY_FAN) ||
+	     data->pwm_enable[1] == 2))
+		return uniwill_fan_disable_tables(data);
+
 	return 0;
 }
 
@@ -1475,6 +1925,9 @@ static int uniwill_fan_set_enable(struct uniwill_data *data, int channel, long v
 
 	if (val == 2) {
 		data->pwm_enable[channel] = 2;
+		data->fan_curve_active = false;
+		data->cpu_curve_len = 0;
+		data->gpu_curve_len = 0;
 		if (data->pwm_enable[0] == 2 &&
 		    (!uniwill_device_supports(data, UNIWILL_FEATURE_SECONDARY_FAN) ||
 		     data->pwm_enable[1] == 2))
@@ -1482,7 +1935,11 @@ static int uniwill_fan_set_enable(struct uniwill_data *data, int channel, long v
 		return 0;
 	}
 
+	/* Flat PWM wins over curve / firmware auto */
 	data->pwm_enable[channel] = 1;
+	data->fan_curve_active = false;
+	data->cpu_curve_len = 0;
+	data->gpu_curve_len = 0;
 	ret = uniwill_fan_enable_tables(data);
 	if (ret)
 		return ret;
@@ -1501,6 +1958,9 @@ static int uniwill_fan_set_pwm(struct uniwill_data *data, int channel, long val)
 	data->pwm_duty[channel] = fixp_linear_interpolate(0, 0, U8_MAX, PWM_MAX, val);
 	if (data->pwm_enable[channel] != 1) {
 		data->pwm_enable[channel] = 1;
+		data->fan_curve_active = false;
+		data->cpu_curve_len = 0;
+		data->gpu_curve_len = 0;
 		ret = uniwill_fan_enable_tables(data);
 		if (ret)
 			return ret;
@@ -2416,21 +2876,17 @@ static int uniwill_battery_init(struct uniwill_data *data)
 	return devm_battery_hook_register(data->dev, &data->hook);
 }
 
-static int uniwill_platform_profile_probe(void *drvdata, unsigned long *choices)
-{
-	set_bit(PLATFORM_PROFILE_LOW_POWER, choices);
-	set_bit(PLATFORM_PROFILE_BALANCED, choices);
-	set_bit(PLATFORM_PROFILE_PERFORMANCE, choices);
-
-	return 0;
-}
-
-static int uniwill_platform_profile_get(struct device *dev,
+static int uniwill_get_performance_mode(struct uniwill_data *data,
 					enum platform_profile_option *profile)
 {
-	struct uniwill_data *data = dev_get_drvdata(dev);
 	unsigned int value;
 	int ret;
+
+	if (data->custom_profile) {
+		*profile = PLATFORM_PROFILE_CUSTOM;
+		WRITE_ONCE(data->last_profile, PLATFORM_PROFILE_CUSTOM);
+		return 0;
+	}
 
 	ret = regmap_read(data->regmap, EC_ADDR_MANUAL_FAN_CTRL, &value);
 	if (ret < 0)
@@ -2454,10 +2910,9 @@ static int uniwill_platform_profile_get(struct device *dev,
 	return 0;
 }
 
-static int uniwill_platform_profile_set(struct device *dev,
+static int uniwill_set_performance_mode(struct uniwill_data *data,
 					enum platform_profile_option profile)
 {
-	struct uniwill_data *data = dev_get_drvdata(dev);
 	unsigned int value;
 	int ret;
 
@@ -2471,6 +2926,15 @@ static int uniwill_platform_profile_set(struct device *dev,
 	case PLATFORM_PROFILE_PERFORMANCE:
 		value = PERF_MODE_TURBO;
 		break;
+	case PLATFORM_PROFILE_CUSTOM:
+		/*
+		 * Software-only: keep the last firmware mode bits so Fn/LED
+		 * stay coherent; userspace applies the Custom PL/fan package.
+		 */
+		data->custom_profile = true;
+		WRITE_ONCE(data->last_profile, PLATFORM_PROFILE_CUSTOM);
+		sysfs_notify(&data->dev->kobj, NULL, "performance_mode");
+		return 0;
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -2481,9 +2945,33 @@ static int uniwill_platform_profile_set(struct device *dev,
 	if (ret < 0)
 		return ret;
 
+	data->custom_profile = false;
 	WRITE_ONCE(data->last_profile, profile);
+	sysfs_notify(&data->dev->kobj, NULL, "performance_mode");
 
 	return 0;
+}
+
+static int uniwill_platform_profile_probe(void *drvdata, unsigned long *choices)
+{
+	set_bit(PLATFORM_PROFILE_LOW_POWER, choices);
+	set_bit(PLATFORM_PROFILE_BALANCED, choices);
+	set_bit(PLATFORM_PROFILE_PERFORMANCE, choices);
+	set_bit(PLATFORM_PROFILE_CUSTOM, choices);
+
+	return 0;
+}
+
+static int uniwill_platform_profile_get(struct device *dev,
+					enum platform_profile_option *profile)
+{
+	return uniwill_get_performance_mode(dev_get_drvdata(dev), profile);
+}
+
+static int uniwill_platform_profile_set(struct device *dev,
+					enum platform_profile_option profile)
+{
+	return uniwill_set_performance_mode(dev_get_drvdata(dev), profile);
 }
 
 static const struct platform_profile_ops uniwill_platform_profile_ops = {
@@ -2514,13 +3002,39 @@ static int uniwill_platform_profile_init(struct uniwill_data *data)
 static void uniwill_platform_profile_button(struct uniwill_data *data)
 {
 	enum platform_profile_option before = READ_ONCE(data->last_profile), now;
+	unsigned int value;
+	bool was_custom = data->custom_profile;
 
 	msleep(100); /* give the EC time to apply its own switch, if any */
 
-	if (!uniwill_platform_profile_get(data->ppdev, &now) && now != before)
-		platform_profile_notify(data->ppdev);
-	else
-		platform_profile_cycle();
+	/*
+	 * Peek the EC directly: while Custom is active get() would always
+	 * return CUSTOM and hide a firmware-side toggle.
+	 */
+	if (!regmap_read(data->regmap, EC_ADDR_MANUAL_FAN_CTRL, &value)) {
+		switch (value & (FAN_MODE_USER | FAN_MODE_TURBO)) {
+		case FAN_MODE_USER:
+			now = PLATFORM_PROFILE_LOW_POWER;
+			break;
+		case FAN_MODE_TURBO:
+			now = PLATFORM_PROFILE_PERFORMANCE;
+			break;
+		default:
+			now = PLATFORM_PROFILE_BALANCED;
+			break;
+		}
+
+		if (!was_custom && now != before) {
+			data->custom_profile = false;
+			WRITE_ONCE(data->last_profile, now);
+			sysfs_notify(&data->dev->kobj, NULL, "performance_mode");
+			platform_profile_notify(data->ppdev);
+			return;
+		}
+	}
+
+	platform_profile_cycle();
+	sysfs_notify(&data->dev->kobj, NULL, "performance_mode");
 }
 
 static int uniwill_notifier_call(struct notifier_block *nb, unsigned long action, void *dummy)
@@ -3084,7 +3598,9 @@ static struct uniwill_device_descriptor medion_erazer_major_15_x1_descriptor __i
 		    UNIWILL_FEATURE_KEYBOARD_BACKLIGHT |
 		    UNIWILL_FEATURE_AC_AUTO_BOOT |
 		    UNIWILL_FEATURE_USB_POWERSHARE |
-		    UNIWILL_FEATURE_PERFORMANCE_MODES,
+		    UNIWILL_FEATURE_PERFORMANCE_MODES |
+		    UNIWILL_FEATURE_FAN_CURVE |
+		    UNIWILL_FEATURE_POWER_LIMITS,
 	.kbd_led_single_color = false,
 	.kbd_led_max_brightness = 4,
 	.lightbar_max_brightness = 200,

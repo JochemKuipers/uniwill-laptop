@@ -1,7 +1,7 @@
 # Maintainer: Jochem Kuipers <jochem@kuipers.cc>
 pkgbase=uniwill-laptop
 pkgname=(uniwill-laptop-dkms uniwill-control)
-pkgver=1.0.3
+pkgver=1.0.4
 pkgrel=1
 pkgdesc='Uniwill / Medion ERAZER laptop extras'
 arch=('x86_64')
@@ -9,7 +9,7 @@ url='https://github.com/JochemKuipers/uniwill-laptop'
 license=('GPL-2.0-only')
 makedepends=('cmake' 'qt6-base')
 source=("$pkgbase-$pkgver.tar.gz::https://github.com/JochemKuipers/uniwill-laptop/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('5d968498d4c520bf084612aff0e98577370eb60ecb7f9b9823e554494ed83ab7')
+sha256sums=('SKIP')
 
 build() {
 	cmake -S "$pkgbase-$pkgver/control" -B build \
@@ -35,7 +35,7 @@ package_uniwill-laptop-dkms() {
 }
 
 package_uniwill-control() {
-	pkgdesc='Qt control app and hotkey OSD for Uniwill / Medion ERAZER laptops'
+	pkgdesc='Erazer Control — Qt app and hotkey OSD for Uniwill / Medion ERAZER laptops'
 	depends=('qt6-base' 'uniwill-laptop-dkms')
 
 	DESTDIR="$pkgdir" cmake --install build

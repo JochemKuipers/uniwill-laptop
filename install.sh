@@ -26,7 +26,9 @@ modprobe uniwill-laptop
 udevadm trigger --action=add --subsystem-match=leds --subsystem-match=platform || true
 
 plat=/sys/devices/platform/INOU0000:00
-for f in fn_lock super_key_enable touchpad_toggle_enable rainbow_animation breathing_in_suspend ctgp_offset usb_c_power_priority ac_auto_boot usb_powershare_high; do
+for f in fn_lock super_key_enable touchpad_toggle_enable rainbow_animation breathing_in_suspend \
+	ctgp_offset usb_c_power_priority ac_auto_boot usb_powershare_high \
+	pl1_watt pl2_watt pl4_watt performance_mode cpu_fan_curve gpu_fan_curve; do
 	if [ -e "$plat/$f" ]; then
 		chgrp plugdev "$plat/$f"
 		chmod 664 "$plat/$f"

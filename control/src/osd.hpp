@@ -1,5 +1,7 @@
 #pragma once
 
+#include "profiles.hpp"
+
 #include <QPixmap>
 #include <QString>
 #include <QWidget>
@@ -23,7 +25,7 @@ public:
 
 	void showToggle(OsdKind kind, bool on);
 	void showOnOff(OsdKind kind, bool on, const QString &title);
-	void showPerformance(const QString &profile);
+	void showPerformance(const QString &profile, const QString &subtitle = {});
 	void showKeyboardLevel(int level, int maxLevel);
 
 protected:
@@ -33,7 +35,7 @@ private:
 	void present(const QPixmap &icon, const QString &title, const QString &left, const QString &right,
 		     bool leftActive);
 	void presentSingle(const QPixmap &icon, const QString &title, const QString &value,
-			   const QColor &accent);
+			   const QColor &accent, const QString &subtitle = {});
 	void placeAndShow();
 	QPixmap iconFor(OsdKind kind, bool on) const;
 	QPixmap iconPerformance(const QString &profile) const;
@@ -44,6 +46,7 @@ private:
 	QLabel *m_left{};
 	QLabel *m_right{};
 	QLabel *m_value{};
+	QLabel *m_subtitle{};
 	QTimer *m_hide{};
 	QColor m_accent{226, 58, 34};
 };
@@ -57,9 +60,11 @@ public:
 private:
 	void poll();
 	void baseline();
+	void applyActiveProfile(bool showOsd);
 
 	OsdPopup *m_popup{};
 	QTimer *m_timer{};
+	ProfileStore m_store;
 	QString m_profile;
 	QString m_fnLock;
 	QString m_superKey;

@@ -62,11 +62,14 @@ OsdPopup::OsdPopup(QWidget *parent)
 	m_right->setObjectName("osdOpt");
 	m_value = new QLabel;
 	m_value->setObjectName("osdValue");
+	m_subtitle = new QLabel;
+	m_subtitle->setObjectName("osdSub");
 	row->addWidget(m_left);
 	row->addWidget(m_right);
 	row->addWidget(m_value);
 	row->addStretch(1);
 	col->addLayout(row);
+	col->addWidget(m_subtitle);
 	root->addLayout(col, 1);
 
 	m_hide = new QTimer(this);
@@ -87,6 +90,12 @@ OsdPopup::OsdPopup(QWidget *parent)
 			font-family: "Fira Sans Condensed", "Noto Sans";
 			font-size: 22px;
 			font-weight: 700;
+		}
+		QLabel#osdSub {
+			color: #9A9286;
+			font-family: "Fira Sans Condensed", "Noto Sans";
+			font-size: 12px;
+			font-weight: 600;
 		}
 	)");
 }
@@ -124,6 +133,8 @@ void OsdPopup::present(const QPixmap &icon, const QString &title, const QString 
 	m_left->setText(left);
 	m_right->setText(right);
 	m_value->clear();
+	m_subtitle->clear();
+	m_subtitle->setVisible(false);
 	m_left->setVisible(true);
 	m_right->setVisible(true);
 	m_value->setVisible(false);
@@ -134,11 +145,13 @@ void OsdPopup::present(const QPixmap &icon, const QString &title, const QString 
 }
 
 void OsdPopup::presentSingle(const QPixmap &icon, const QString &title, const QString &value,
-			     const QColor &accent)
+			     const QColor &accent, const QString &subtitle)
 {
 	m_icon->setPixmap(icon);
 	m_title->setText(title.toUpper());
 	m_value->setText(value);
+	m_subtitle->setText(subtitle);
+	m_subtitle->setVisible(!subtitle.isEmpty());
 	m_left->clear();
 	m_right->clear();
 	m_left->setVisible(false);
@@ -202,6 +215,8 @@ QPixmap OsdPopup::iconPerformance(const QString &profile) const
 		c = QColor(212, 160, 23);
 	else if (profile == "performance")
 		c = QColor(226, 58, 34);
+	else if (profile == "custom")
+		c = QColor(120, 160, 220);
 
 	p.setPen(Qt::NoPen);
 	p.setBrush(c);
@@ -249,7 +264,7 @@ void OsdPopup::showOnOff(OsdKind kind, bool on, const QString &title)
 	present(iconFor(kind, on), title, QStringLiteral("On"), QStringLiteral("Off"), on);
 }
 
-void OsdPopup::showPerformance(const QString &profile)
+void OsdPopup::showPerformance(const QString &profile, const QString &subtitle)
 {
 	QString label = QStringLiteral("Balance");
 	QColor accent(212, 160, 23);
@@ -259,8 +274,12 @@ void OsdPopup::showPerformance(const QString &profile)
 	} else if (profile == "performance") {
 		label = QStringLiteral("Turbo");
 		accent = QColor(226, 58, 34);
+	} else if (profile == "custom") {
+		label = QStringLiteral("Custom");
+		accent = QColor(120, 160, 220);
 	}
-	presentSingle(iconPerformance(profile), QStringLiteral("Performance Mode"), label, accent);
+	presentSingle(iconPerformance(profile), QStringLiteral("Performance Mode"), label, accent,
+		      subtitle);
 }
 
 void OsdPopup::showKeyboardLevel(int level, int maxLevel)
@@ -282,15 +301,40 @@ OsdWatcher::OsdWatcher(OsdPopup *popup, QObject *parent)
 	m_timer->start();
 }
 
+void OsdWatcher::applyActiveProfile(bool showOsd)
+{
+	QString mode = sysRead(platformAttr("performance_mode"));
+	if (mode.isEmpty())
+		mode = sysRead("/sys/firmware/acpi/platform_profile");
+	if (mode.isEmpty())
+		return;
+
+	m_store.load();
+	QString err;
+	m_store.applyMode(mode, &err);
+
+	if (!showOsd)
+		return;
+
+	QString subtitle;
+	if (const Profile *p = m_store.find(ProfileStore::modeToProfileId(mode)))
+		subtitle = QStringLiteral("PL1 %1 W").arg(p->pl1);
+	m_popup->showPerformance(mode, subtitle);
+}
+
 void OsdWatcher::baseline()
 {
-	m_profile = sysRead("/sys/firmware/acpi/platform_profile");
+	QString mode = sysRead(platformAttr("performance_mode"));
+	if (mode.isEmpty())
+		mode = sysRead("/sys/firmware/acpi/platform_profile");
+	m_profile = mode;
 	m_fnLock = sysRead(platformAttr("fn_lock"));
 	m_superKey = sysRead(platformAttr("super_key_enable"));
 	m_touchpadToggle = sysRead(platformAttr("touchpad_toggle_enable"));
 	const QString kbd = ledDir("multicolor:kbd_backlight");
 	m_kbdBright = kbd.isEmpty() ? -1 : sysRead(kbd + "/brightness").toInt();
 	m_ready = true;
+	applyActiveProfile(false);
 }
 
 void OsdWatcher::poll()
@@ -298,10 +342,12 @@ void OsdWatcher::poll()
 	if (!m_ready)
 		return;
 
-	const QString profile = sysRead("/sys/firmware/acpi/platform_profile");
+	QString profile = sysRead(platformAttr("performance_mode"));
+	if (profile.isEmpty())
+		profile = sysRead("/sys/firmware/acpi/platform_profile");
 	if (!profile.isEmpty() && profile != m_profile) {
 		m_profile = profile;
-		m_popup->showPerformance(profile);
+		applyActiveProfile(true);
 	}
 
 	const QString fn = sysRead(platformAttr("fn_lock"));

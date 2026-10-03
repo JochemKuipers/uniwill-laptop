@@ -103,3 +103,40 @@ Description:
 		boot at the same time is not supported.
 
 		Reading this file returns the current status of the USB powershare functionality.
+
+What:		/sys/bus/platform/devices/INOU0000:XX/pl1_watt
+What:		/sys/bus/platform/devices/INOU0000:XX/pl2_watt
+What:		/sys/bus/platform/devices/INOU0000:XX/pl4_watt
+Date:		October 2026
+KernelVersion:	7.2
+Contact:	Jochem Kuipers <jochem@kuipers.me>
+Description:
+		CPU package power limits in watts (PL1 / PL2 / PL4), written to EC registers
+		0x0783–0x0785. Accepted range is 15–200. Firmware may still override under thermal
+		or mode changes. Reading returns the last value programmed in the EC.
+
+What:		/sys/bus/platform/devices/INOU0000:XX/performance_mode
+Date:		October 2026
+KernelVersion:	7.2
+Contact:	Jochem Kuipers <jochem@kuipers.me>
+Description:
+		Mirrors ``/sys/firmware/acpi/platform_profile`` for the supported choices
+		``low-power``, ``balanced``, ``performance``, and ``custom``, but lives on the
+		platform device so udev can grant ``plugdev`` write access. ``custom`` is
+		software-only: EC mode bits are left unchanged and userspace applies a stored
+		power/fan package. Writing also updates the ACPI platform profile.
+
+What:		/sys/bus/platform/devices/INOU0000:XX/cpu_fan_curve
+What:		/sys/bus/platform/devices/INOU0000:XX/gpu_fan_curve
+Date:		October 2026
+KernelVersion:	7.2
+Contact:	Jochem Kuipers <jochem@kuipers.me>
+Description:
+		Multi-point fan curves as space-separated ``temp_c:duty`` pairs (duty 0–255,
+		matching hwmon PWM). Up to 16 points with strictly increasing temperatures.
+		Writing enables universal EC fan tables and programs start/end/speed triples.
+		The kernel enforces at least 30% duty at or above 95 °C. Writing ``auto`` or an
+		empty string disables universal tables and returns control to firmware auto.
+
+		Precedence versus flat PWM: hwmon ``pwmX_enable=1`` (manual flat duty) wins over
+		these curves; curves win over firmware auto (``pwmX_enable=2`` / empty curve).
